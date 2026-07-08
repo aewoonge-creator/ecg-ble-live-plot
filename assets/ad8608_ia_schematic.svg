@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
+  <defs>
+    <style>
+      .wire { stroke:#1f2937; stroke-width:3; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+      .thin { stroke:#475569; stroke-width:2; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+      .op { fill:#f8fafc; stroke:#0f172a; stroke-width:3; }
+      .node { fill:#0f172a; }
+      .label { font-family:Arial, sans-serif; font-size:24px; fill:#0f172a; }
+      .small { font-family:Arial, sans-serif; font-size:18px; fill:#334155; }
+      .pin { font-family:Arial, sans-serif; font-size:16px; fill:#64748b; }
+      .title { font-family:Arial, sans-serif; font-size:32px; font-weight:700; fill:#0f172a; }
+      .box { fill:#eef2ff; stroke:#3730a3; stroke-width:2; rx:8; }
+      .res { stroke:#0f172a; stroke-width:3; fill:none; }
+    </style>
+  </defs>
+
+  <text x="50" y="55" class="title">AD8608 3-Op-Amp Instrumentation Amplifier</text>
+  <text x="52" y="88" class="small">Single supply: V+ = +5 V, V- = GND, output centered at Vref = 2.5 V</text>
+
+  <!-- Input labels -->
+  <text x="50" y="225" class="label">ECG+</text>
+  <text x="50" y="425" class="label">ECG-</text>
+  <line x1="120" y1="220" x2="245" y2="220" class="wire"/>
+  <line x1="120" y1="420" x2="245" y2="420" class="wire"/>
+
+  <!-- U1A -->
+  <polygon points="245,160 245,280 390,220" class="op"/>
+  <text x="265" y="145" class="label">U1A</text>
+  <text x="265" y="302" class="small">AD8608 A</text>
+  <text x="224" y="218" class="label">+</text>
+  <text x="224" y="258" class="label">-</text>
+  <text x="394" y="225" class="pin">OUTA</text>
+  <line x1="390" y1="220" x2="505" y2="220" class="wire"/>
+  <circle cx="505" cy="220" r="5" class="node"/>
+
+  <!-- U1B -->
+  <polygon points="245,360 245,480 390,420" class="op"/>
+  <text x="265" y="345" class="label">U1B</text>
+  <text x="265" y="502" class="small">AD8608 B</text>
+  <text x="224" y="418" class="label">+</text>
+  <text x="224" y="458" class="label">-</text>
+  <text x="394" y="425" class="pin">OUTB</text>
+  <line x1="390" y1="420" x2="505" y2="420" class="wire"/>
+  <circle cx="505" cy="420" r="5" class="node"/>
+
+  <!-- Feedback resistors stage 1 -->
+  <path d="M505 220 L505 255 L480 255 L470 245 L450 265 L430 245 L410 265 L390 245 L370 265 L350 245 L330 265 L310 245 L290 265 L270 245 L245 245" class="res"/>
+  <text x="365" y="292" class="small">RfA = 100 kΩ</text>
+  <path d="M505 420 L505 455 L480 455 L470 445 L450 465 L430 445 L410 465 L390 445 L370 465 L350 445 L330 465 L310 445 L290 465 L270 445 L245 445" class="res"/>
+  <text x="365" y="492" class="small">RfB = 100 kΩ</text>
+
+  <!-- Rg between negative nodes -->
+  <line x1="245" y1="245" x2="205" y2="245" class="wire"/>
+  <line x1="245" y1="445" x2="205" y2="445" class="wire"/>
+  <path d="M205 245 L205 275 L195 285 L215 305 L195 325 L215 345 L195 365 L215 385 L195 405 L205 415 L205 445" class="res"/>
+  <text x="90" y="345" class="small">Rg = 2.02 kΩ</text>
+  <text x="86" y="370" class="small">Gain ≈ 100</text>
+
+  <!-- Diff amp U1C -->
+  <polygon points="770,270 770,430 960,350" class="op"/>
+  <text x="815" y="255" class="label">U1C</text>
+  <text x="815" y="460" class="small">AD8608 C</text>
+  <text x="748" y="322" class="label">-</text>
+  <text x="748" y="382" class="label">+</text>
+  <line x1="960" y1="350" x2="1110" y2="350" class="wire"/>
+  <text x="1020" y="325" class="label">Vout</text>
+
+  <!-- R3 from OUTA to U1C - -->
+  <line x1="505" y1="220" x2="610" y2="220" class="wire"/>
+  <path d="M610 220 L630 220 L640 210 L660 230 L680 210 L700 230 L720 210 L740 230 L760 220 L770 220" class="res"/>
+  <line x1="770" y1="220" x2="770" y2="320" class="wire"/>
+  <text x="620" y="198" class="small">R3 = 100 kΩ</text>
+
+  <!-- R4 feedback U1C -->
+  <path d="M1110 350 L1110 250 L1080 250 L1070 240 L1050 260 L1030 240 L1010 260 L990 240 L970 260 L950 240 L930 260 L910 240 L890 250 L770 250 L770 320" class="res"/>
+  <text x="915" y="230" class="small">R4 = 100 kΩ</text>
+
+  <!-- R5 from OUTB to U1C + -->
+  <line x1="505" y1="420" x2="610" y2="420" class="wire"/>
+  <path d="M610 420 L630 420 L640 410 L660 430 L680 410 L700 430 L720 410 L740 430 L760 420 L770 420" class="res"/>
+  <line x1="770" y1="420" x2="770" y2="380" class="wire"/>
+  <text x="620" y="455" class="small">R5 = 100 kΩ</text>
+
+  <!-- R6 from U1C + to Vref -->
+  <line x1="770" y1="380" x2="705" y2="380" class="wire"/>
+  <path d="M705 380 L685 380 L675 370 L655 390 L635 370 L615 390 L595 370 L575 390 L555 370 L545 380 L515 380" class="res"/>
+  <line x1="515" y1="380" x2="515" y2="590" class="wire"/>
+  <line x1="450" y1="590" x2="580" y2="590" class="wire"/>
+  <text x="470" y="625" class="label">Vref = 2.5 V</text>
+  <text x="585" y="365" class="small">R6 = 100 kΩ</text>
+
+  <!-- Supply notes -->
+  <rect x="770" y="70" width="350" height="100" class="box"/>
+  <text x="795" y="105" class="small">AD8608 supply pins</text>
+  <text x="795" y="132" class="small">Pin 4  V+  -> +5 V</text>
+  <text x="795" y="158" class="small">Pin 11 V-  -> GND</text>
+
+  <rect x="50" y="625" width="420" height="90" class="box"/>
+  <text x="75" y="660" class="small">Use 0.1% matched resistors for R3-R6.</text>
+  <text x="75" y="688" class="small">R3=R4=R5=R6 matching controls 60 Hz rejection.</text>
+</svg>

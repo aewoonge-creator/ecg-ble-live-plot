@@ -29,7 +29,7 @@ python .\serve_gui.py
 브라우저에서 엽니다.
 
 ```text
-http://127.0.0.1:8765/index.html
+http://127.0.0.1:8765/gui.html
 ```
 
 Chrome 또는 Edge를 권장합니다. Web Bluetooth는 보안 정책 때문에 보통 `http://127.0.0.1` 또는 `https`에서 실행해야 합니다.
@@ -129,7 +129,9 @@ python .\tools\filter_ecg_csv.py .\adc_only.csv --time-col -1 --value-col 0 --fs
 
 ```text
 ecg_ble_gui/
-  index.html                    # Web Bluetooth live GUI
+  index.html                    # GitHub Pages project landing page
+  gui.html                      # Web Bluetooth live GUI
+  assets/                       # Pages images and plots
   serve_gui.py                  # local no-cache HTTP server
   tools/filter_ecg_csv.py       # offline ECG CSV filter
   docs/nrf54l15_ble_payload.md  # firmware payload contract
