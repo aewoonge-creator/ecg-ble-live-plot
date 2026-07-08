@@ -6,16 +6,16 @@
   <title>ECG BLE Live Plot Project</title>
   <style>
     :root {
-      --bg: #f5f7fb;
+      --bg: #f7f8fa;
       --panel: #ffffff;
-      --text: #172033;
-      --muted: #667085;
-      --line: #d7dce5;
-      --accent: #0f766e;
-      --accent-dark: #115e59;
-      --blue: #2563eb;
-      --soft: #e7f7f4;
-      --shadow: 0 12px 34px rgba(16, 24, 40, 0.08);
+      --text: #111827;
+      --muted: #566176;
+      --line: #d9dee8;
+      --navy: #073747;
+      --navy-2: #0c4254;
+      --accent: #0b559f;
+      --soft: #eef4f8;
+      --shadow: 0 8px 22px rgba(7, 55, 71, 0.08);
     }
 
     * { box-sizing: border-box; }
@@ -36,9 +36,8 @@
       position: sticky;
       top: 0;
       z-index: 10;
-      border-bottom: 1px solid rgba(215, 220, 229, 0.9);
-      background: rgba(255, 255, 255, 0.92);
-      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      background: var(--navy);
     }
 
     .nav-inner {
@@ -52,6 +51,7 @@
     }
 
     .brand {
+      color: #ffffff;
       font-weight: 800;
       letter-spacing: 0;
     }
@@ -60,7 +60,7 @@
       display: flex;
       align-items: center;
       gap: 16px;
-      color: #344054;
+      color: rgba(255, 255, 255, 0.82);
       font-size: 14px;
       white-space: nowrap;
     }
@@ -70,18 +70,15 @@
     }
 
     .hero {
-      background:
-        linear-gradient(135deg, rgba(15, 118, 110, 0.92), rgba(37, 99, 235, 0.78)),
-        url("assets/scope_124_matplotlib_style.svg");
-      background-size: cover;
-      background-position: center;
-      color: #fff;
+      border-bottom: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--text);
     }
 
     .hero-inner {
       width: min(1120px, calc(100% - 32px));
       margin: 0 auto;
-      padding: 82px 0 72px;
+      padding: 86px 0 78px;
       display: grid;
       grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
       gap: 34px;
@@ -90,7 +87,7 @@
 
     .eyebrow {
       margin: 0 0 12px;
-      color: rgba(255, 255, 255, 0.84);
+      color: var(--accent);
       font-size: 14px;
       font-weight: 750;
       letter-spacing: 0.04em;
@@ -107,7 +104,7 @@
     .lead {
       margin: 20px 0 0;
       max-width: 720px;
-      color: rgba(255, 255, 255, 0.9);
+      color: var(--muted);
       font-size: 18px;
     }
 
@@ -124,25 +121,25 @@
       justify-content: center;
       min-height: 44px;
       padding: 10px 16px;
-      border: 1px solid rgba(255, 255, 255, 0.56);
+      border: 1px solid var(--navy);
       border-radius: 8px;
-      color: #fff;
+      color: var(--navy);
       font-weight: 800;
       text-decoration: none;
-      background: rgba(255, 255, 255, 0.12);
+      background: #fff;
     }
 
     .button.primary {
-      color: var(--accent-dark);
-      background: #fff;
-      border-color: #fff;
+      color: #fff;
+      background: var(--navy);
+      border-color: var(--navy);
     }
 
     .hero-card {
-      border: 1px solid rgba(255, 255, 255, 0.32);
+      border: 1px solid var(--line);
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.16);
-      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
+      background: #fff;
+      box-shadow: var(--shadow);
       overflow: hidden;
     }
 
@@ -155,14 +152,14 @@
     .hero-card p {
       margin: 0;
       padding: 12px 14px;
-      color: rgba(255, 255, 255, 0.92);
+      color: var(--muted);
       font-size: 13px;
     }
 
     main {
       width: min(1120px, calc(100% - 32px));
       margin: 0 auto;
-      padding: 54px 0 72px;
+      padding: 58px 0 72px;
     }
 
     section {
@@ -224,7 +221,7 @@
       margin-bottom: 10px;
       border-radius: 999px;
       padding: 4px 10px;
-      color: var(--accent-dark);
+      color: var(--accent);
       background: var(--soft);
       font-size: 12px;
       font-weight: 800;
@@ -257,6 +254,7 @@
       border-radius: 8px;
       padding: 13px 12px;
       background: #fff;
+      color: var(--navy);
       text-align: center;
       font-weight: 800;
     }
@@ -266,7 +264,7 @@
       border-radius: 8px;
       padding: 16px;
       color: #e6edf3;
-      background: #172033;
+      background: var(--navy);
       font-family: Consolas, "Courier New", monospace;
       font-size: 13px;
       line-height: 1.55;
@@ -281,7 +279,7 @@
       padding: 22px;
       border-radius: 8px;
       color: #fff;
-      background: linear-gradient(135deg, var(--accent), var(--blue));
+      background: var(--navy);
     }
 
     .download p {
@@ -345,8 +343,7 @@
     <section id="project">
       <h2>프로젝트 소개</h2>
       <p class="section-intro">
-        이 프로젝트의 핵심은 필터로 신호를 예쁘게 만드는 것보다 먼저, AD8608 회로와 전극에서 들어오는 원신호가 충분히 안정적인지 확인하는 것입니다.
-        GUI는 raw input과 filtered ECG를 동시에 보여줘서 회로 문제와 디지털 필터 효과를 분리해서 볼 수 있게 만들었습니다.
+        AD8608 기반 ECG 측정 회로, nRF54L15 BLE 전송, 브라우저 실시간 GUI를 하나로 연결한 실험용 시스템입니다.
       </p>
       <div class="grid">
         <div class="card"><div class="card-body"><span class="tag">Analog</span><h3>AD8608 Front-End</h3><p>ECG 전극 신호를 ADC 입력 범위에 맞게 증폭하고 기준전압을 중심으로 배치합니다.</p></div></div>
