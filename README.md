@@ -7,6 +7,7 @@ AD8608 analog front-end output을 nRF54L15 ADC로 샘플링하고, BLE Notify로
 ## Features
 
 - Web Bluetooth BLE Notify 수신
+- Web Serial USB CDC 수신
 - Nordic UART Service UUID 기본값 제공
 - ASCII, `uint16`, `int16`, `float32` Notify payload 지원
 - ADC count -> voltage 변환
@@ -42,7 +43,7 @@ BLE 장치가 없어도 `시뮬레이터 시작`을 눌러 plot, filter, CSV 저
 ECG electrodes
   -> AD8608 analog front-end
   -> nRF54L15 ADC
-  -> BLE Notify
+  -> BLE Notify or USB Serial
   -> laptop browser GUI
   -> ADC conversion + HPF/notch/LPF + live plot
 ```
@@ -53,7 +54,7 @@ ECG electrodes
 2. 전극 위치, 접촉 임피던스, 케이블 흔들림, RLD/DRL, 기준전압을 먼저 안정화합니다.
 3. nRF54L15 ADC raw count가 안정적으로 들어오는지 UART log 또는 nRF Connect로 확인합니다.
 4. GUI 시뮬레이터로 화면 동작을 확인합니다.
-5. BLE Notify를 연결하고 raw input panel을 먼저 봅니다.
+5. BLE Notify 또는 USB Serial을 연결하고 raw input panel을 먼저 봅니다.
 6. raw input이 괜찮을 때 HPF/notch/LPF를 켜고 filtered ECG panel을 해석합니다.
 
 ## BLE Defaults
@@ -66,6 +67,27 @@ Notify UUID : 6e400003-b5a3-f393-e0a9-e50e24dcca9e
 ```
 
 nRF firmware에서 다른 custom service/characteristic을 쓰면 GUI 입력칸에서 UUID를 바꾸면 됩니다.
+
+## USB Serial Mode
+
+BLE가 없는 데스크탑에서는 nRF54L15 firmware가 USB CDC serial로 ADC sample을 출력하게 만들면 됩니다. GitHub Pages의 `gui.html`을 Chrome 또는 Edge에서 열고 `USB Serial 연결`을 누르세요.
+
+권장 serial payload:
+
+```text
+adc
+t_ms,adc
+```
+
+예시:
+
+```text
+2038
+1024,2041
+1026,2044
+```
+
+함수발생기로 sine을 넣어 ADC/plot 경로만 확인할 때는 `5-10 Hz`, `100-300 mVpp`, ADC 입력 범위 안의 DC offset으로 시작하세요.
 
 ## Notify Payload Contract
 

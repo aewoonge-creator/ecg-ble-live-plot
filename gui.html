@@ -256,7 +256,7 @@
   <main>
     <aside>
       <h1>ECG BLE Live Plot</h1>
-      <p class="hint">AD8608 AFE -> nRF54L15 ADC/BLE -> 실시간 ECG 확인용 GUI입니다. nRF 펌웨어가 Notify로 ADC 샘플을 보내면 여기서 전압 변환, 필터, CSV 기록, 플롯을 확인합니다.</p>
+      <p class="hint">AD8608 AFE -> nRF54L15 ADC -> BLE/USB Serial -> 실시간 ECG 확인용 GUI입니다. nRF 펌웨어가 ADC 샘플을 보내면 여기서 전압 변환, 필터, CSV 기록, 플롯을 확인합니다.</p>
 
       <h2>BLE 연결</h2>
       <label for="namePrefix">장치 이름 prefix</label>
@@ -272,13 +272,23 @@
         <button id="connectBtn">BLE 연결</button>
         <button id="disconnectBtn" class="secondary" disabled>해제</button>
       </div>
+
+      <h2>USB Serial 연결</h2>
+      <label for="baudRate">Baud rate</label>
+      <input id="baudRate" type="number" value="115200" min="9600" step="9600">
+      <div class="button-row">
+        <button id="serialConnectBtn" class="secondary">USB Serial 연결</button>
+        <button id="serialDisconnectBtn" class="secondary" disabled>해제</button>
+      </div>
+      <p class="small">nRF54L15 USB CDC가 adc 또는 t_ms,adc 한 줄씩 출력하면 BLE 없이도 plot을 확인할 수 있습니다.</p>
+
       <div class="button-row">
         <button id="simBtn" class="secondary">시뮬레이터 시작</button>
         <button id="clearBtn" class="secondary">화면 초기화</button>
       </div>
 
       <h2>데이터 형식</h2>
-      <label for="payloadMode">Notify payload</label>
+      <label for="payloadMode">Input payload</label>
       <select id="payloadMode">
         <option value="ascii">ASCII: adc 또는 t_ms,adc 한 줄</option>
         <option value="u16le">Binary: uint16 little-endian 연속 샘플</option>
@@ -401,6 +411,9 @@
       notifyUuid: document.getElementById("notifyUuid"),
       connectBtn: document.getElementById("connectBtn"),
       disconnectBtn: document.getElementById("disconnectBtn"),
+      baudRate: document.getElementById("baudRate"),
+      serialConnectBtn: document.getElementById("serialConnectBtn"),
+      serialDisconnectBtn: document.getElementById("serialDisconnectBtn"),
       simBtn: document.getElementById("simBtn"),
       clearBtn: document.getElementById("clearBtn"),
       payloadMode: document.getElementById("payloadMode"),
@@ -503,6 +516,9 @@
     const state = {
       device: null,
       characteristic: null,
+      serialPort: null,
+      serialReader: null,
+      serialReading: false,
       connected: false,
       paused: false,
       simTimer: null,
@@ -665,7 +681,7 @@
       }
     }
 
-    function parseAscii(view) {
+    function parseAscii(view, source = "ble-ascii") {
       const text = new TextDecoder().decode(view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength));
       state.asciiCarry += text;
       const lines = state.asciiCarry.split(/\r?\n/);
@@ -675,21 +691,21 @@
         const trimmed = line.trim();
         if (!trimmed) continue;
         const fields = trimmed.split(/[,\t ]+/).map(Number).filter(Number.isFinite);
-        if (fields.length === 1) processValue(fields[0], null, "ble-ascii");
-        if (fields.length >= 2) processValue(fields[1], fields[0], "ble-ascii");
+        if (fields.length === 1) processValue(fields[0], null, source);
+        if (fields.length >= 2) processValue(fields[1], fields[0], source);
       }
     }
 
-    function parseBinary(view) {
+    function parseBinary(view, sourcePrefix = "ble") {
       const mode = els.payloadMode.value;
       if (mode === "u16le" || mode === "i16le") {
         for (let i = 0; i + 1 < view.byteLength; i += 2) {
           const value = mode === "u16le" ? view.getUint16(i, true) : view.getInt16(i, true);
-          processValue(value, null, `ble-${mode}`);
+          processValue(value, null, `${sourcePrefix}-${mode}`);
         }
       } else if (mode === "f32le") {
         for (let i = 0; i + 3 < view.byteLength; i += 4) {
-          processValue(view.getFloat32(i, true), null, "ble-f32le");
+          processValue(view.getFloat32(i, true), null, `${sourcePrefix}-f32le`);
         }
       }
     }
@@ -698,6 +714,14 @@
       const view = event.target.value;
       if (els.payloadMode.value === "ascii") parseAscii(view);
       else parseBinary(view);
+    }
+
+    function parseIncomingBytes(bytes, sourcePrefix) {
+      const view = bytes instanceof DataView
+        ? bytes
+        : new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      if (els.payloadMode.value === "ascii") parseAscii(view, `${sourcePrefix}-ascii`);
+      else parseBinary(view, sourcePrefix);
     }
 
     async function connectBle() {
@@ -759,6 +783,69 @@
       els.deviceLabel.textContent = "장치 없음";
       setStatus("대기", "warn");
       log("BLE 연결 해제");
+    }
+
+    async function connectSerial() {
+      if (!navigator.serial) {
+        log("이 브라우저에서 Web Serial을 사용할 수 없습니다. Chrome/Edge에서 HTTPS 또는 localhost로 열어주세요.");
+        setStatus("Serial 미지원", "warn");
+        return;
+      }
+
+      try {
+        const baudRate = Math.max(numberOf(els.baudRate, 115200), 1200);
+        state.serialPort = await navigator.serial.requestPort();
+        await state.serialPort.open({ baudRate });
+        state.serialReader = state.serialPort.readable.getReader();
+        state.serialReading = true;
+        els.serialConnectBtn.disabled = true;
+        els.serialDisconnectBtn.disabled = false;
+        els.deviceLabel.textContent = `USB Serial ${baudRate}`;
+        setStatus("Serial 연결됨", "ok");
+        log(`USB Serial 연결: ${baudRate} baud`);
+        readSerialLoop();
+      } catch (err) {
+        setStatus("Serial 실패", "warn");
+        log(`USB Serial 연결 실패: ${err.message}`);
+      }
+    }
+
+    async function readSerialLoop() {
+      try {
+        while (state.serialReading && state.serialReader) {
+          const { value, done } = await state.serialReader.read();
+          if (done) break;
+          if (value) parseIncomingBytes(value, "serial");
+        }
+      } catch (err) {
+        if (state.serialReading) log(`USB Serial 읽기 오류: ${err.message}`);
+      } finally {
+        if (state.serialReading) await disconnectSerial();
+      }
+    }
+
+    async function disconnectSerial() {
+      state.serialReading = false;
+      try {
+        if (state.serialReader) {
+          await state.serialReader.cancel();
+          state.serialReader.releaseLock();
+        }
+      } catch (err) {
+        log(`USB Serial reader 해제 중 경고: ${err.message}`);
+      }
+      try {
+        if (state.serialPort) await state.serialPort.close();
+      } catch (err) {
+        log(`USB Serial port 닫기 중 경고: ${err.message}`);
+      }
+      state.serialReader = null;
+      state.serialPort = null;
+      els.serialConnectBtn.disabled = false;
+      els.serialDisconnectBtn.disabled = true;
+      els.deviceLabel.textContent = "장치 없음";
+      setStatus("대기", "warn");
+      log("USB Serial 연결 해제");
     }
 
     function startStopSimulator() {
@@ -878,7 +965,7 @@
 
       if (rows.length < 2) {
         ctx.fillStyle = "#667085";
-        ctx.fillText("BLE 연결 또는 시뮬레이터 시작을 누르세요.", x + 16 * dpr, y + h / 2);
+        ctx.fillText("BLE/USB Serial 연결 또는 시뮬레이터 시작을 누르세요.", x + 16 * dpr, y + h / 2);
         return;
       }
 
@@ -932,6 +1019,8 @@
 
     els.connectBtn.addEventListener("click", connectBle);
     els.disconnectBtn.addEventListener("click", disconnectBle);
+    els.serialConnectBtn.addEventListener("click", connectSerial);
+    els.serialDisconnectBtn.addEventListener("click", disconnectSerial);
     els.simBtn.addEventListener("click", startStopSimulator);
     els.clearBtn.addEventListener("click", clearData);
     els.applyFilterBtn.addEventListener("click", resetFilters);

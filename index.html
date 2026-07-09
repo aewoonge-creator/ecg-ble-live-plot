@@ -324,7 +324,7 @@
         <p class="eyebrow">AD8608 AFE + nRF54L15 BLE + Real-Time ECG GUI</p>
         <h1>Real-Time ECG Monitor</h1>
         <p class="lead">
-          AD8608 아날로그 회로에서 얻은 ECG 신호를 nRF54L15 ADC와 BLE Notify로 전송하고,
+          AD8608 아날로그 회로에서 얻은 ECG 신호를 nRF54L15 ADC와 BLE 또는 USB Serial로 전송하고,
           노트북 브라우저에서 ADC 변환, HPF, 60 Hz notch, LPF 40 Hz 필터링과 실시간 plot을 확인하는 프로젝트입니다.
         </p>
         <div class="actions">
@@ -347,14 +347,14 @@
       </p>
       <div class="grid">
         <div class="card"><div class="card-body"><span class="tag">Analog</span><h3>AD8608 Front-End</h3><p>ECG 전극 신호를 ADC 입력 범위에 맞게 증폭하고 기준전압을 중심으로 배치합니다.</p></div></div>
-        <div class="card"><div class="card-body"><span class="tag">Wireless</span><h3>nRF54L15 BLE</h3><p>ADC sample을 Nordic UART Service 또는 custom Notify characteristic으로 노트북에 전송합니다.</p></div></div>
+        <div class="card"><div class="card-body"><span class="tag">Transfer</span><h3>nRF54L15 BLE/USB</h3><p>ADC sample을 BLE Notify 또는 USB CDC Serial로 노트북에 전송합니다.</p></div></div>
         <div class="card"><div class="card-body"><span class="tag">Browser GUI</span><h3>Live Plot</h3><p>Web Bluetooth로 데이터를 받아 전압 변환, 필터링, CSV 기록, rough HR 추정을 수행합니다.</p></div></div>
       </div>
       <div class="flow" aria-label="system flow">
         <div>Electrodes</div>
         <div>AD8608 AFE</div>
         <div>nRF54L15 ADC</div>
-        <div>BLE Notify</div>
+        <div>BLE/USB</div>
         <div>Live GUI</div>
       </div>
     </section>
