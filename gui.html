@@ -283,7 +283,6 @@
       <p class="small">nRF54L15 USB CDC가 adc 또는 t_ms,adc 한 줄씩 출력하면 BLE 없이도 plot을 확인할 수 있습니다.</p>
 
       <div class="button-row">
-        <button id="simBtn" class="secondary">시뮬레이터 시작</button>
         <button id="clearBtn" class="secondary">화면 초기화</button>
       </div>
 
@@ -414,7 +413,6 @@
       baudRate: document.getElementById("baudRate"),
       serialConnectBtn: document.getElementById("serialConnectBtn"),
       serialDisconnectBtn: document.getElementById("serialDisconnectBtn"),
-      simBtn: document.getElementById("simBtn"),
       clearBtn: document.getElementById("clearBtn"),
       payloadMode: document.getElementById("payloadMode"),
       sampleRate: document.getElementById("sampleRate"),
@@ -521,7 +519,6 @@
       serialReading: false,
       connected: false,
       paused: false,
-      simTimer: null,
       sampleIndex: 0,
       receivedTotal: 0,
       lastRateT: performance.now(),
@@ -750,6 +747,7 @@
         await state.characteristic.startNotifications();
         state.characteristic.addEventListener("characteristicvaluechanged", onNotify);
 
+        clearData();
         state.connected = true;
         els.connectBtn.disabled = true;
         els.disconnectBtn.disabled = false;
@@ -798,6 +796,7 @@
         await state.serialPort.open({ baudRate });
         state.serialReader = state.serialPort.readable.getReader();
         state.serialReading = true;
+        clearData();
         els.serialConnectBtn.disabled = true;
         els.serialDisconnectBtn.disabled = false;
         els.deviceLabel.textContent = `USB Serial ${baudRate}`;
@@ -846,34 +845,6 @@
       els.deviceLabel.textContent = "장치 없음";
       setStatus("대기", "warn");
       log("USB Serial 연결 해제");
-    }
-
-    function startStopSimulator() {
-      if (state.simTimer) {
-        clearInterval(state.simTimer);
-        state.simTimer = null;
-        els.simBtn.textContent = "시뮬레이터 시작";
-        setStatus(state.connected ? "연결됨" : "대기", state.connected ? "ok" : "warn");
-        log("시뮬레이터 정지");
-        return;
-      }
-
-      const fs = Math.max(numberOf(els.sampleRate, 500), 10);
-      const block = Math.max(1, Math.floor(fs / 30));
-      state.simTimer = setInterval(() => {
-        const bits = numberOf(els.adcBits, 12);
-        const center = numberOf(els.midScale, Math.pow(2, bits - 1));
-        const fsNow = Math.max(numberOf(els.sampleRate, 500), 10);
-        for (let i = 0; i < block; i++) {
-          const t = state.sampleIndex / fsNow;
-          const sine = 260 * Math.sin(2 * Math.PI * 5 * t);
-          const noise = (Math.random() - 0.5) * 8;
-          processValue(center + sine + noise, null, "sim-sine");
-        }
-      }, 1000 * block / fs);
-      els.simBtn.textContent = "시뮬레이터 정지";
-      setStatus("시뮬레이션", "ok");
-      log("sine 시뮬레이터 시작: 5 Hz");
     }
 
     function clearData() {
@@ -960,7 +931,7 @@
 
       if (rows.length < 2) {
         ctx.fillStyle = "#667085";
-        ctx.fillText("BLE/USB Serial 연결 또는 시뮬레이터 시작을 누르세요.", x + 16 * dpr, y + h / 2);
+        ctx.fillText("BLE 또는 USB Serial 데이터를 기다리는 중입니다.", x + 16 * dpr, y + h / 2);
         return;
       }
 
@@ -1016,7 +987,6 @@
     els.disconnectBtn.addEventListener("click", disconnectBle);
     els.serialConnectBtn.addEventListener("click", connectSerial);
     els.serialDisconnectBtn.addEventListener("click", disconnectSerial);
-    els.simBtn.addEventListener("click", startStopSimulator);
     els.clearBtn.addEventListener("click", clearData);
     els.applyFilterBtn.addEventListener("click", resetFilters);
     els.exportBtn.addEventListener("click", downloadCsv);
