@@ -866,19 +866,14 @@
         const fsNow = Math.max(numberOf(els.sampleRate, 500), 10);
         for (let i = 0; i < block; i++) {
           const t = state.sampleIndex / fsNow;
-          const phase = t % 1.0;
-          const qrs = 520 * Math.exp(-Math.pow((phase - 0.18) / 0.018, 2));
-          const p = 55 * Math.exp(-Math.pow((phase - 0.05) / 0.035, 2));
-          const twave = 120 * Math.exp(-Math.pow((phase - 0.42) / 0.07, 2));
-          const wander = 90 * Math.sin(2 * Math.PI * 0.25 * t);
-          const mains = 28 * Math.sin(2 * Math.PI * 60 * t);
-          const noise = (Math.random() - 0.5) * 18;
-          processValue(center + p + qrs + twave + wander + mains + noise, null, "sim");
+          const sine = 260 * Math.sin(2 * Math.PI * 5 * t);
+          const noise = (Math.random() - 0.5) * 8;
+          processValue(center + sine + noise, null, "sim-sine");
         }
       }, 1000 * block / fs);
       els.simBtn.textContent = "시뮬레이터 정지";
       setStatus("시뮬레이션", "ok");
-      log("시뮬레이터 시작");
+      log("sine 시뮬레이터 시작: 5 Hz");
     }
 
     function clearData() {
