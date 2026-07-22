@@ -373,6 +373,7 @@
         <button id="exportBtn" class="secondary">CSV 저장</button>
       </div>
       <p class="small">기록 CSV 컬럼: Time, acc_x, acc_y, acc_z, ecg, eda, temp, hr, activity, activity_label, Subject</p>
+      <p class="small">hr 컬럼은 R-peak가 2개 이상 검출된 뒤 RR interval로 자동 계산됩니다.</p>
     </aside>
 
     <section>
@@ -533,6 +534,7 @@
       baselineReady: false,
       lastPeaks: [],
       lastPeakT: -Infinity,
+      currentHrBpm: NaN,
     };
 
     function numberOf(input, fallback) {
@@ -625,7 +627,7 @@
       let y = x;
       for (const filter of state.filters) y = filter.next(y);
 
-      const row = { t, sample, inputV, filteredV: y, source };
+      const row = { t, sample, inputV, filteredV: y, source, hrBpm: state.currentHrBpm };
       state.samples.push(row);
 
       const maxSamples = Math.ceil(numberOf(els.windowSec, 8) * fs * 1.2);
@@ -635,24 +637,46 @@
 
       if (state.recording) state.recordRows.push(row);
 
-      detectRoughPeak(t, y);
+      detectRoughPeak();
+      row.hrBpm = state.currentHrBpm;
       updateMetrics(inputV, y);
     }
 
-    function detectRoughPeak(t, y) {
+    function hrFromPeaks() {
+      if (state.lastPeaks.length < 2) return NaN;
+      const intervals = [];
+      for (let i = 1; i < state.lastPeaks.length; i++) {
+        const rr = state.lastPeaks[i] - state.lastPeaks[i - 1];
+        if (rr >= 0.32 && rr <= 2.0) intervals.push(rr);
+      }
+      if (!intervals.length) return NaN;
+      const avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      return 60 / avg;
+    }
+
+    function detectRoughPeak() {
       if (state.samples.length < 5) return;
       const fs = Math.max(numberOf(els.sampleRate, 500), 10);
       const recent = state.samples.slice(-Math.max(50, Math.floor(fs * 1.5))).map(v => v.filteredV);
       const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
       const variance = recent.reduce((a, b) => a + (b - mean) * (b - mean), 0) / recent.length;
       const threshold = mean + Math.max(Math.sqrt(variance) * 2.6, 0.00025);
-      const a = state.samples[state.samples.length - 3]?.filteredV;
-      const b = state.samples[state.samples.length - 2]?.filteredV;
-      const c = state.samples[state.samples.length - 1]?.filteredV;
-      if (b > threshold && b > a && b > c && t - state.lastPeakT > 0.32) {
-        state.lastPeakT = t;
-        state.lastPeaks.push(t);
-        state.lastPeaks = state.lastPeaks.filter(v => t - v <= 12);
+      const aRow = state.samples[state.samples.length - 3];
+      const bRow = state.samples[state.samples.length - 2];
+      const cRow = state.samples[state.samples.length - 1];
+      const a = aRow?.filteredV;
+      const b = bRow?.filteredV;
+      const c = cRow?.filteredV;
+      const peakT = bRow?.t;
+      if (b > threshold && b > a && b > c && peakT - state.lastPeakT > 0.32) {
+        state.lastPeakT = peakT;
+        state.lastPeaks.push(peakT);
+        state.lastPeaks = state.lastPeaks.filter(v => peakT - v <= 12);
+        const hr = hrFromPeaks();
+        if (Number.isFinite(hr) && hr >= 35 && hr <= 220) {
+          state.currentHrBpm = hr;
+          bRow.hrBpm = hr;
+        }
       }
     }
 
@@ -670,12 +694,7 @@
         els.rateMetric.textContent = `${state.sampleRateMeasured.toFixed(0)} Hz`;
       }
 
-      if (state.lastPeaks.length >= 2) {
-        const intervals = [];
-        for (let i = 1; i < state.lastPeaks.length; i++) intervals.push(state.lastPeaks[i] - state.lastPeaks[i - 1]);
-        const avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-        els.hrMetric.textContent = `${Math.round(60 / avg)} bpm`;
-      }
+      els.hrMetric.textContent = Number.isFinite(state.currentHrBpm) ? `${Math.round(state.currentHrBpm)} bpm` : "-";
     }
 
     function parseAscii(view, source = "ble-ascii") {
@@ -856,6 +875,7 @@
       state.lastRateT = performance.now();
       state.lastPeaks = [];
       state.lastPeakT = -Infinity;
+      state.currentHrBpm = NaN;
       resetFilters();
       updateMetrics(NaN, NaN);
       els.sampleMetric.textContent = "0";
@@ -878,7 +898,7 @@
           r.filteredV.toExponential(8),
           "0",
           "0",
-          "",
+          Number.isFinite(r.hrBpm) ? r.hrBpm.toFixed(1) : "",
           "NO_ACTIVITY",
           "NO_ACTIVITY",
           "Subject1",
