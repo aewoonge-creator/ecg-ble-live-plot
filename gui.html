@@ -372,7 +372,7 @@
         <button id="recordBtn" class="secondary">CSV 기록 시작</button>
         <button id="exportBtn" class="secondary">CSV 저장</button>
       </div>
-      <p class="small">기록 CSV 컬럼: time_s, adc_or_sample, input_v, filtered_v, source</p>
+      <p class="small">기록 CSV 컬럼: Time, acc_x, acc_y, acc_z, ecg, eda, temp, hr, activity, activity_label, Subject</p>
     </aside>
 
     <section>
@@ -865,14 +865,25 @@
     }
 
     function csvText(rows) {
-      const header = "time_s,adc_or_sample,input_v,filtered_v,source";
-      const body = rows.map(r => [
-        r.t.toFixed(6),
-        Number(r.sample).toFixed(8),
-        r.inputV.toExponential(8),
-        r.filteredV.toExponential(8),
-        r.source,
-      ].join(","));
+      const header = "Time,acc_x,acc_y,acc_z,ecg,eda,temp,hr,activity,activity_label,Subject";
+      const firstT = rows[0]?.t ?? 0;
+      const baseTime = new Date();
+      const body = rows.map(r => {
+        const stamp = new Date(baseTime.getTime() + Math.max(0, r.t - firstT) * 1000);
+        return [
+          stamp.toISOString().replace("T", " ").replace("Z", ""),
+          "0",
+          "0",
+          "0",
+          r.filteredV.toExponential(8),
+          "0",
+          "0",
+          "",
+          "NO_ACTIVITY",
+          "NO_ACTIVITY",
+          "Subject1",
+        ].join(",");
+      });
       return [header, ...body].join("\n");
     }
 
