@@ -1,5 +1,7 @@
 # ECG BLE Live Plot GUI
 
+[실시간 GUI 바로 열기](https://aewoonge-creator.github.io/ecg-ble-live-plot/gui.html)
+
 AD8608 analog front-end output을 nRF54L15 ADC로 샘플링하고, BLE Notify로 노트북에 보내 실시간 ECG를 확인하는 브라우저 GUI입니다.
 
 이 프로젝트의 우선순위는 **원신호 품질 확인**입니다. 필터링은 회로, 전극, RLD/DRL, 기준전압, 케이블 노이즈를 확인한 뒤에 적용하는 downstream 단계로 두었습니다.
