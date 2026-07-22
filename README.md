@@ -174,6 +174,18 @@ git remote add origin https://github.com/YOUR_ID/ecg-ble-live-plot.git
 git push -u origin main
 ```
 
+GitHub 웹에서 바로 터미널을 열고 싶으면 아래 링크를 사용하세요.
+
+[GitHub Codespaces 터미널 열기](https://codespaces.new/aewoonge-creator/ecg-ble-live-plot)
+
+Codespaces가 열리면 브라우저 안 터미널에서:
+
+```bash
+python serve_gui.py
+```
+
+실행 후 표시되는 forwarded port 주소에서 `gui.html`을 열면 됩니다.
+
 현재 Codex 환경에서는 `git` 명령이 PATH에 없으면 직접 push가 안 됩니다. Git for Windows를 설치했거나 GitHub Desktop을 쓰면 이 폴더를 그대로 새 repository로 올리면 됩니다.
 
 ## Safety Note
