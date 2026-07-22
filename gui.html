@@ -212,6 +212,27 @@
       text-overflow: ellipsis;
     }
 
+    .plot-toolbar {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(104px, 1fr));
+      gap: 8px;
+      align-items: center;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .plot-toolbar .record-state {
+      min-width: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+      text-align: right;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .plot-wrap {
       position: relative;
       min-height: 420px;
@@ -248,6 +269,8 @@
       aside { overflow: visible; }
       .metrics { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
       .topbar { grid-template-columns: 1fr; }
+      .plot-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .plot-toolbar .record-state { grid-column: 1 / -1; text-align: left; }
       .plot-wrap { height: 58vh; }
     }
   </style>
@@ -366,14 +389,6 @@
         </div>
       </div>
       <button id="applyFilterBtn" class="secondary">필터 재설정</button>
-
-      <h2>기록</h2>
-      <div class="button-row">
-        <button id="recordBtn" class="secondary">CSV 기록 시작</button>
-        <button id="exportBtn" class="secondary">CSV 저장</button>
-      </div>
-      <p class="small">기록 CSV 컬럼: Time, acc_x, acc_y, acc_z, ecg, eda, temp, hr, activity, activity_label, Subject</p>
-      <p class="small">hr 컬럼은 R-peak가 2개 이상 검출된 뒤 RR interval로 자동 계산됩니다.</p>
     </aside>
 
     <section>
@@ -385,7 +400,6 @@
             <span id="filterLabel">HPF 0.5 Hz + LPF 40 Hz + Notch 60 Hz</span>
           </div>
         </div>
-        <button id="pauseBtn" class="secondary">일시정지</button>
       </div>
 
       <div class="metrics">
@@ -394,6 +408,15 @@
         <div class="metric"><div class="label">Rate</div><div id="rateMetric" class="value">0 Hz</div></div>
         <div class="metric"><div class="label">Samples</div><div id="sampleMetric" class="value">0</div></div>
         <div class="metric"><div class="label">Rough HR</div><div id="hrMetric" class="value">-</div></div>
+      </div>
+
+      <div class="plot-toolbar">
+        <button id="recordBtn" class="secondary">CSV 기록</button>
+        <button id="stopRecordBtn" class="secondary" disabled>기록 중지</button>
+        <button id="exportBtn" class="secondary">CSV 저장</button>
+        <button id="clearCsvBtn" class="secondary">CSV 초기화</button>
+        <button id="pauseBtn" class="secondary">일시정지</button>
+        <div id="recordState" class="record-state">CSV 대기: 0 samples</div>
       </div>
 
       <div class="plot-wrap">
@@ -432,8 +455,11 @@
       notchQ: document.getElementById("notchQ"),
       applyFilterBtn: document.getElementById("applyFilterBtn"),
       recordBtn: document.getElementById("recordBtn"),
+      stopRecordBtn: document.getElementById("stopRecordBtn"),
       exportBtn: document.getElementById("exportBtn"),
+      clearCsvBtn: document.getElementById("clearCsvBtn"),
       pauseBtn: document.getElementById("pauseBtn"),
+      recordState: document.getElementById("recordState"),
       statusBadge: document.getElementById("statusBadge"),
       deviceLabel: document.getElementById("deviceLabel"),
       filterLabel: document.getElementById("filterLabel"),
@@ -528,6 +554,7 @@
       samples: [],
       recordRows: [],
       recording: false,
+      recordStartedAt: null,
       asciiCarry: "",
       filters: [],
       baseline: 0,
@@ -635,7 +662,10 @@
         state.samples.splice(0, state.samples.length - maxSamples);
       }
 
-      if (state.recording) state.recordRows.push(row);
+      if (state.recording) {
+        state.recordRows.push(row);
+        updateRecordingUi();
+      }
 
       detectRoughPeak();
       row.hrBpm = state.currentHrBpm;
@@ -869,6 +899,8 @@
     function clearData() {
       state.samples = [];
       state.recordRows = [];
+      state.recording = false;
+      state.recordStartedAt = null;
       state.sampleIndex = 0;
       state.receivedTotal = 0;
       state.lastRateCount = 0;
@@ -881,7 +913,40 @@
       els.sampleMetric.textContent = "0";
       els.rateMetric.textContent = "0 Hz";
       els.hrMetric.textContent = "-";
+      updateRecordingUi();
       log("화면/버퍼 초기화");
+    }
+
+    function updateRecordingUi() {
+      els.recordBtn.disabled = state.recording;
+      els.stopRecordBtn.disabled = !state.recording;
+      els.recordBtn.className = state.recording ? "danger" : "secondary";
+      els.pauseBtn.textContent = state.paused ? "재개" : "일시정지";
+      const prefix = state.recording ? "CSV 기록 중" : "CSV 대기";
+      els.recordState.textContent = `${prefix}: ${state.recordRows.length} samples`;
+    }
+
+    function startCsvRecording() {
+      state.recordRows = [];
+      state.recording = true;
+      state.recordStartedAt = new Date();
+      updateRecordingUi();
+      log("CSV 기록 시작: 새 파일용 버퍼 초기화");
+    }
+
+    function stopCsvRecording() {
+      if (!state.recording) return;
+      state.recording = false;
+      updateRecordingUi();
+      log(`CSV 기록 중지: ${state.recordRows.length} samples`);
+    }
+
+    function clearCsvBuffer() {
+      state.recording = false;
+      state.recordRows = [];
+      state.recordStartedAt = null;
+      updateRecordingUi();
+      log("CSV 버퍼 초기화");
     }
 
     function csvText(rows) {
@@ -908,9 +973,10 @@
     }
 
     function downloadCsv() {
-      const rows = state.recordRows.length ? state.recordRows : state.samples;
+      if (state.recording) stopCsvRecording();
+      const rows = state.recordRows;
       if (!rows.length) {
-        log("저장할 샘플이 없습니다.");
+        log("저장할 CSV 기록 샘플이 없습니다. 먼저 CSV 기록을 시작하세요.");
         return;
       }
       const blob = new Blob([csvText(rows)], { type: "text/csv;charset=utf-8" });
@@ -921,6 +987,10 @@
       a.click();
       URL.revokeObjectURL(a.href);
       log(`CSV 저장: ${rows.length} samples`);
+      state.recordRows = [];
+      state.recordStartedAt = null;
+      updateRecordingUi();
+      log("CSV 저장 완료: 다음 저장과 중복되지 않도록 기록 버퍼 초기화");
     }
 
     function draw() {
@@ -1021,15 +1091,12 @@
     els.clearBtn.addEventListener("click", clearData);
     els.applyFilterBtn.addEventListener("click", resetFilters);
     els.exportBtn.addEventListener("click", downloadCsv);
-    els.recordBtn.addEventListener("click", () => {
-      state.recording = !state.recording;
-      els.recordBtn.textContent = state.recording ? "CSV 기록 정지" : "CSV 기록 시작";
-      els.recordBtn.className = state.recording ? "danger" : "secondary";
-      log(state.recording ? "CSV 기록 시작" : `CSV 기록 정지: ${state.recordRows.length} samples`);
-    });
+    els.recordBtn.addEventListener("click", startCsvRecording);
+    els.stopRecordBtn.addEventListener("click", stopCsvRecording);
+    els.clearCsvBtn.addEventListener("click", clearCsvBuffer);
     els.pauseBtn.addEventListener("click", () => {
       state.paused = !state.paused;
-      els.pauseBtn.textContent = state.paused ? "재개" : "일시정지";
+      updateRecordingUi();
       log(state.paused ? "플롯 일시정지" : "플롯 재개");
     });
 
@@ -1041,6 +1108,7 @@
     });
 
     resetFilters();
+    updateRecordingUi();
     draw();
   </script>
 </body>
