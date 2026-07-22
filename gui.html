@@ -950,23 +950,13 @@
     }
 
     function csvText(rows) {
-      const header = "Time,acc_x,acc_y,acc_z,ecg,eda,temp,hr,activity,activity_label,Subject";
+      const header = "timestamp,ecg";
       const firstT = rows[0]?.t ?? 0;
-      const baseTime = new Date();
       const body = rows.map(r => {
-        const stamp = new Date(baseTime.getTime() + Math.max(0, r.t - firstT) * 1000);
+        const timestampMs = Math.round(Math.max(0, r.t - firstT) * 1000);
         return [
-          stamp.toISOString().replace("T", " ").replace("Z", ""),
-          "0",
-          "0",
-          "0",
+          timestampMs,
           r.filteredV.toExponential(8),
-          "0",
-          "0",
-          Number.isFinite(r.hrBpm) ? r.hrBpm.toFixed(1) : "",
-          "NO_ACTIVITY",
-          "NO_ACTIVITY",
-          "Subject1",
         ].join(",");
       });
       return [header, ...body].join("\n");
