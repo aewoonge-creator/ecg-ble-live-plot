@@ -181,7 +181,7 @@
 
     .metrics {
       display: grid;
-      grid-template-columns: repeat(5, minmax(100px, 1fr));
+      grid-template-columns: repeat(8, minmax(94px, 1fr));
       gap: 8px;
       padding: 12px 16px;
       border-bottom: 1px solid var(--line);
@@ -389,6 +389,34 @@
         </div>
       </div>
       <button id="applyFilterBtn" class="secondary">필터 재설정</button>
+
+      <h2>R peak / HRV</h2>
+      <div class="check-row">
+        <input id="rPeakOn" type="checkbox" checked>
+        <span>브라우저에서 R peak, RR, HRV 계산</span>
+      </div>
+      <div class="row">
+        <div>
+          <label for="peakSigma">Peak threshold sigma</label>
+          <input id="peakSigma" type="number" value="2.6" min="0.5" step="0.1">
+        </div>
+        <div>
+          <label for="refractoryMs">Refractory ms</label>
+          <input id="refractoryMs" type="number" value="300" min="200" step="10">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="rrMinMs">RR min ms</label>
+          <input id="rrMinMs" type="number" value="300" min="200" step="10">
+        </div>
+        <div>
+          <label for="rrMaxMs">RR max ms</label>
+          <input id="rrMaxMs" type="number" value="2000" min="800" step="50">
+        </div>
+      </div>
+      <label for="hrvBeats">HRV window beats</label>
+      <input id="hrvBeats" type="number" value="32" min="4" max="128" step="1">
     </aside>
 
     <section>
@@ -407,7 +435,10 @@
         <div class="metric"><div class="label">Filtered</div><div id="latestFiltered" class="value">-</div></div>
         <div class="metric"><div class="label">Rate</div><div id="rateMetric" class="value">0 Hz</div></div>
         <div class="metric"><div class="label">Samples</div><div id="sampleMetric" class="value">0</div></div>
-        <div class="metric"><div class="label">Rough HR</div><div id="hrMetric" class="value">-</div></div>
+        <div class="metric"><div class="label">HR</div><div id="hrMetric" class="value">-</div></div>
+        <div class="metric"><div class="label">RR</div><div id="rrMetric" class="value">-</div></div>
+        <div class="metric"><div class="label">SDNN</div><div id="sdnnMetric" class="value">-</div></div>
+        <div class="metric"><div class="label">RMSSD</div><div id="rmssdMetric" class="value">-</div></div>
       </div>
 
       <div class="plot-toolbar">
@@ -454,6 +485,12 @@
       notchHz: document.getElementById("notchHz"),
       notchQ: document.getElementById("notchQ"),
       applyFilterBtn: document.getElementById("applyFilterBtn"),
+      rPeakOn: document.getElementById("rPeakOn"),
+      peakSigma: document.getElementById("peakSigma"),
+      refractoryMs: document.getElementById("refractoryMs"),
+      rrMinMs: document.getElementById("rrMinMs"),
+      rrMaxMs: document.getElementById("rrMaxMs"),
+      hrvBeats: document.getElementById("hrvBeats"),
       recordBtn: document.getElementById("recordBtn"),
       stopRecordBtn: document.getElementById("stopRecordBtn"),
       exportBtn: document.getElementById("exportBtn"),
@@ -468,6 +505,9 @@
       rateMetric: document.getElementById("rateMetric"),
       sampleMetric: document.getElementById("sampleMetric"),
       hrMetric: document.getElementById("hrMetric"),
+      rrMetric: document.getElementById("rrMetric"),
+      sdnnMetric: document.getElementById("sdnnMetric"),
+      rmssdMetric: document.getElementById("rmssdMetric"),
       canvas: document.getElementById("plot"),
       log: document.getElementById("log"),
     };
@@ -561,7 +601,11 @@
       baselineReady: false,
       lastPeaks: [],
       lastPeakT: -Infinity,
+      rrIntervalsMs: [],
+      latestRrMs: NaN,
       currentHrBpm: NaN,
+      sdnnMs: NaN,
+      rmssdMs: NaN,
     };
 
     function numberOf(input, fallback) {
@@ -654,7 +698,18 @@
       let y = x;
       for (const filter of state.filters) y = filter.next(y);
 
-      const row = { t, sample, inputV, filteredV: y, source, hrBpm: state.currentHrBpm };
+      const row = {
+        t,
+        sample,
+        inputV,
+        filteredV: y,
+        source,
+        rPeak: 0,
+        rrMs: state.latestRrMs,
+        hrBpm: state.currentHrBpm,
+        sdnnMs: state.sdnnMs,
+        rmssdMs: state.rmssdMs,
+      };
       state.samples.push(row);
 
       const maxSamples = Math.ceil(numberOf(els.windowSec, 8) * fs * 1.2);
@@ -667,30 +722,45 @@
         updateRecordingUi();
       }
 
-      detectRoughPeak();
+      detectRPeak();
+      row.rrMs = state.latestRrMs;
       row.hrBpm = state.currentHrBpm;
+      row.sdnnMs = state.sdnnMs;
+      row.rmssdMs = state.rmssdMs;
       updateMetrics(inputV, y);
     }
 
-    function hrFromPeaks() {
-      if (state.lastPeaks.length < 2) return NaN;
-      const intervals = [];
-      for (let i = 1; i < state.lastPeaks.length; i++) {
-        const rr = state.lastPeaks[i] - state.lastPeaks[i - 1];
-        if (rr >= 0.32 && rr <= 2.0) intervals.push(rr);
+    function calculateHrv() {
+      const beats = Math.max(Math.floor(numberOf(els.hrvBeats, 32)), 4);
+      const rr = state.rrIntervalsMs.slice(-beats);
+      if (rr.length < 2) {
+        state.currentHrBpm = NaN;
+        state.sdnnMs = NaN;
+        state.rmssdMs = NaN;
+        return;
       }
-      if (!intervals.length) return NaN;
-      const avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-      return 60 / avg;
+
+      const mean = rr.reduce((a, b) => a + b, 0) / rr.length;
+      const variance = rr.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (rr.length - 1);
+      let diffSq = 0;
+      for (let i = 1; i < rr.length; i++) {
+        const d = rr[i] - rr[i - 1];
+        diffSq += d * d;
+      }
+
+      state.currentHrBpm = 60000 / mean;
+      state.sdnnMs = Math.sqrt(Math.max(variance, 0));
+      state.rmssdMs = Math.sqrt(diffSq / (rr.length - 1));
     }
 
-    function detectRoughPeak() {
-      if (state.samples.length < 5) return;
+    function detectRPeak() {
+      if (!els.rPeakOn.checked || state.samples.length < 5) return;
       const fs = Math.max(numberOf(els.sampleRate, 500), 10);
       const recent = state.samples.slice(-Math.max(50, Math.floor(fs * 1.5))).map(v => v.filteredV);
       const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
       const variance = recent.reduce((a, b) => a + (b - mean) * (b - mean), 0) / recent.length;
-      const threshold = mean + Math.max(Math.sqrt(variance) * 2.6, 0.00025);
+      const peakSigma = Math.max(numberOf(els.peakSigma, 2.6), 0.1);
+      const threshold = mean + Math.max(Math.sqrt(variance) * peakSigma, 0.00025);
       const aRow = state.samples[state.samples.length - 3];
       const bRow = state.samples[state.samples.length - 2];
       const cRow = state.samples[state.samples.length - 1];
@@ -698,15 +768,30 @@
       const b = bRow?.filteredV;
       const c = cRow?.filteredV;
       const peakT = bRow?.t;
-      if (b > threshold && b > a && b > c && peakT - state.lastPeakT > 0.32) {
+      const refractorySec = Math.max(numberOf(els.refractoryMs, 300), 100) / 1000;
+      if (b > threshold && b > a && b > c && peakT - state.lastPeakT > refractorySec) {
+        const rrMs = Number.isFinite(state.lastPeakT) ? (peakT - state.lastPeakT) * 1000 : NaN;
+        const rrMinMs = Math.max(numberOf(els.rrMinMs, 300), 100);
+        const rrMaxMs = Math.max(numberOf(els.rrMaxMs, 2000), rrMinMs + 100);
+
+        if (Number.isFinite(rrMs) && rrMs >= rrMinMs && rrMs <= rrMaxMs) {
+          state.latestRrMs = rrMs;
+          state.rrIntervalsMs.push(rrMs);
+          const maxBeats = Math.max(Math.floor(numberOf(els.hrvBeats, 32)), 4);
+          if (state.rrIntervalsMs.length > maxBeats) {
+            state.rrIntervalsMs.splice(0, state.rrIntervalsMs.length - maxBeats);
+          }
+          calculateHrv();
+          bRow.rrMs = state.latestRrMs;
+          bRow.hrBpm = state.currentHrBpm;
+          bRow.sdnnMs = state.sdnnMs;
+          bRow.rmssdMs = state.rmssdMs;
+        }
+
+        bRow.rPeak = 1;
         state.lastPeakT = peakT;
         state.lastPeaks.push(peakT);
         state.lastPeaks = state.lastPeaks.filter(v => peakT - v <= 12);
-        const hr = hrFromPeaks();
-        if (Number.isFinite(hr) && hr >= 35 && hr <= 220) {
-          state.currentHrBpm = hr;
-          bRow.hrBpm = hr;
-        }
       }
     }
 
@@ -725,6 +810,9 @@
       }
 
       els.hrMetric.textContent = Number.isFinite(state.currentHrBpm) ? `${Math.round(state.currentHrBpm)} bpm` : "-";
+      els.rrMetric.textContent = Number.isFinite(state.latestRrMs) ? `${Math.round(state.latestRrMs)} ms` : "-";
+      els.sdnnMetric.textContent = Number.isFinite(state.sdnnMs) ? `${state.sdnnMs.toFixed(1)} ms` : "-";
+      els.rmssdMetric.textContent = Number.isFinite(state.rmssdMs) ? `${state.rmssdMs.toFixed(1)} ms` : "-";
     }
 
     function parseAscii(view, source = "ble-ascii") {
@@ -907,12 +995,19 @@
       state.lastRateT = performance.now();
       state.lastPeaks = [];
       state.lastPeakT = -Infinity;
+      state.rrIntervalsMs = [];
+      state.latestRrMs = NaN;
       state.currentHrBpm = NaN;
+      state.sdnnMs = NaN;
+      state.rmssdMs = NaN;
       resetFilters();
       updateMetrics(NaN, NaN);
       els.sampleMetric.textContent = "0";
       els.rateMetric.textContent = "0 Hz";
       els.hrMetric.textContent = "-";
+      els.rrMetric.textContent = "-";
+      els.sdnnMetric.textContent = "-";
+      els.rmssdMetric.textContent = "-";
       updateRecordingUi();
       log("화면/버퍼 초기화");
     }
@@ -950,13 +1045,32 @@
     }
 
     function csvText(rows) {
-      const header = "timestamp,ecg";
+      const header = [
+        "timestamp_ms",
+        "source",
+        "adc",
+        "input_v",
+        "filtered_ecg_v",
+        "r_peak",
+        "rr_ms",
+        "hr_bpm",
+        "sdnn_ms",
+        "rmssd_ms",
+      ].join(",");
       const firstT = rows[0]?.t ?? 0;
       const body = rows.map(r => {
         const timestampMs = Math.round(Math.max(0, r.t - firstT) * 1000);
         return [
           timestampMs,
+          r.source,
+          r.sample,
+          r.inputV.toExponential(8),
           r.filteredV.toExponential(8),
+          r.rPeak ? 1 : 0,
+          Number.isFinite(r.rrMs) ? r.rrMs.toFixed(1) : "",
+          Number.isFinite(r.hrBpm) ? r.hrBpm.toFixed(2) : "",
+          Number.isFinite(r.sdnnMs) ? r.sdnnMs.toFixed(2) : "",
+          Number.isFinite(r.rmssdMs) ? r.rmssdMs.toFixed(2) : "",
         ].join(",");
       });
       return [header, ...body].join("\n");
@@ -1055,6 +1169,19 @@
       ctx.stroke();
 
       const t0 = lastT - windowSec;
+
+      if (key === "filteredV") {
+        ctx.fillStyle = "#b42318";
+        for (const r of visible) {
+          if (!r.rPeak) continue;
+          const px = x + ((r.t - t0) / windowSec) * w;
+          const py = y + h - ((r[key] - minY) / (maxY - minY)) * h;
+          ctx.beginPath();
+          ctx.arc(px, py, 3.5 * dpr, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.4 * dpr;
       ctx.beginPath();
