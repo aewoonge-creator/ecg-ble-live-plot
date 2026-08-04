@@ -1047,9 +1047,7 @@
     function csvText(rows) {
       const header = [
         "timestamp_ms",
-        "source",
         "adc",
-        "input_v",
         "filtered_ecg_v",
         "r_peak",
         "rr_ms",
@@ -1062,9 +1060,7 @@
         const timestampMs = Math.round(Math.max(0, r.t - firstT) * 1000);
         return [
           timestampMs,
-          r.source,
           r.sample,
-          r.inputV.toExponential(8),
           r.filteredV.toExponential(8),
           r.rPeak ? 1 : 0,
           Number.isFinite(r.rrMs) ? r.rrMs.toFixed(1) : "",
