@@ -181,7 +181,7 @@
 
     .metrics {
       display: grid;
-      grid-template-columns: repeat(8, minmax(94px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
       gap: 8px;
       padding: 12px 16px;
       border-bottom: 1px solid var(--line);
@@ -210,6 +210,10 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    .metric.state .value {
+      color: var(--accent-2);
     }
 
     .plot-toolbar {
@@ -416,7 +420,7 @@
         </div>
       </div>
       <label for="hrvBeats">HRV window beats</label>
-      <input id="hrvBeats" type="number" value="32" min="4" max="128" step="1">
+      <input id="hrvBeats" type="number" value="64" min="4" max="180" step="1">
     </aside>
 
     <section>
@@ -439,6 +443,10 @@
         <div class="metric"><div class="label">RR</div><div id="rrMetric" class="value">-</div></div>
         <div class="metric"><div class="label">SDNN</div><div id="sdnnMetric" class="value">-</div></div>
         <div class="metric"><div class="label">RMSSD</div><div id="rmssdMetric" class="value">-</div></div>
+        <div class="metric"><div class="label">pNN50</div><div id="pnn50Metric" class="value">-</div></div>
+        <div class="metric"><div class="label">LF/HF</div><div id="lfHfMetric" class="value">-</div></div>
+        <div class="metric state"><div class="label">State</div><div id="stateMetric" class="value">-</div></div>
+        <div class="metric"><div class="label">Stress</div><div id="stressMetric" class="value">-</div></div>
       </div>
 
       <div class="plot-toolbar">
@@ -458,6 +466,7 @@
     </section>
   </main>
 
+  <script src="hrv_stress_model.js"></script>
   <script>
     const els = {
       namePrefix: document.getElementById("namePrefix"),
@@ -508,6 +517,10 @@
       rrMetric: document.getElementById("rrMetric"),
       sdnnMetric: document.getElementById("sdnnMetric"),
       rmssdMetric: document.getElementById("rmssdMetric"),
+      pnn50Metric: document.getElementById("pnn50Metric"),
+      lfHfMetric: document.getElementById("lfHfMetric"),
+      stateMetric: document.getElementById("stateMetric"),
+      stressMetric: document.getElementById("stressMetric"),
       canvas: document.getElementById("plot"),
       log: document.getElementById("log"),
     };
@@ -606,6 +619,11 @@
       currentHrBpm: NaN,
       sdnnMs: NaN,
       rmssdMs: NaN,
+      pnn50Pct: NaN,
+      lfHfRatio: NaN,
+      predictedState: "",
+      stressProbability: NaN,
+      baselineProbability: NaN,
     };
 
     function numberOf(input, fallback) {
@@ -709,6 +727,11 @@
         hrBpm: state.currentHrBpm,
         sdnnMs: state.sdnnMs,
         rmssdMs: state.rmssdMs,
+        pnn50Pct: state.pnn50Pct,
+        lfHfRatio: state.lfHfRatio,
+        predictedState: state.predictedState,
+        stressProbability: state.stressProbability,
+        baselineProbability: state.baselineProbability,
       };
       state.samples.push(row);
 
@@ -727,7 +750,105 @@
       row.hrBpm = state.currentHrBpm;
       row.sdnnMs = state.sdnnMs;
       row.rmssdMs = state.rmssdMs;
+      row.pnn50Pct = state.pnn50Pct;
+      row.lfHfRatio = state.lfHfRatio;
+      row.predictedState = state.predictedState;
+      row.stressProbability = state.stressProbability;
+      row.baselineProbability = state.baselineProbability;
       updateMetrics(inputV, y);
+    }
+
+    function calculateLfHf(rr) {
+      if (rr.length < 20) return NaN;
+      const times = [0];
+      for (const value of rr) times.push(times[times.length - 1] + value / 1000);
+      const start = times[1];
+      const end = times[times.length - 1];
+      if (end - start < 45) return NaN;
+
+      const fs = 4;
+      const grid = [];
+      for (let t = start; t < end; t += 1 / fs) grid.push(t);
+      if (grid.length < 16) return NaN;
+
+      const tachogram = [];
+      let j = 1;
+      for (const t of grid) {
+        while (j < times.length - 1 && times[j + 1] < t) j += 1;
+        const leftT = times[j];
+        const rightT = times[Math.min(j + 1, times.length - 1)];
+        const leftV = rr[Math.max(0, j - 1)];
+        const rightV = rr[Math.min(j, rr.length - 1)];
+        const ratio = rightT > leftT ? (t - leftT) / (rightT - leftT) : 0;
+        tachogram.push(leftV + (rightV - leftV) * Math.max(0, Math.min(1, ratio)));
+      }
+
+      const mean = tachogram.reduce((a, b) => a + b, 0) / tachogram.length;
+      const centered = tachogram.map((v, i) => {
+        const hann = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / Math.max(1, tachogram.length - 1));
+        return (v - mean) * hann;
+      });
+
+      function bandPower(loHz, hiHz) {
+        let total = 0;
+        for (let k = 1; k <= Math.floor(centered.length / 2); k++) {
+          const freq = k * fs / centered.length;
+          if (freq < loHz || freq >= hiHz) continue;
+          let re = 0;
+          let im = 0;
+          for (let n = 0; n < centered.length; n++) {
+            const angle = -2 * Math.PI * k * n / centered.length;
+            re += centered[n] * Math.cos(angle);
+            im += centered[n] * Math.sin(angle);
+          }
+          total += (re * re + im * im) / centered.length;
+        }
+        return total;
+      }
+
+      const lf = bandPower(0.04, 0.15);
+      const hf = bandPower(0.15, 0.40);
+      return hf > 0 ? lf / hf : NaN;
+    }
+
+    function predictTree(tree, features) {
+      let node = 0;
+      while (tree.children_left[node] !== -1) {
+        const featureIndex = tree.feature[node];
+        node = features[featureIndex] <= tree.threshold[node]
+          ? tree.children_left[node]
+          : tree.children_right[node];
+      }
+      const values = tree.value[node];
+      const total = values.reduce((a, b) => a + b, 0);
+      return total > 0 ? values.map(v => v / total) : values.map(() => 0);
+    }
+
+    function predictStressState(featuresByName) {
+      const bundle = window.HRV_STRESS_MODEL;
+      if (!bundle || !Array.isArray(bundle.trees)) return null;
+      const features = bundle.featureCols.map(name => featuresByName[name]);
+      if (features.some(v => !Number.isFinite(v))) return null;
+
+      const probs = new Array(bundle.classes.length).fill(0);
+      for (const tree of bundle.trees) {
+        const treeProb = predictTree(tree, features);
+        for (let i = 0; i < probs.length; i++) probs[i] += treeProb[i] / bundle.trees.length;
+      }
+
+      let best = 0;
+      for (let i = 1; i < probs.length; i++) {
+        if (probs[i] > probs[best]) best = i;
+      }
+
+      const stressIndex = bundle.classes.indexOf("stress");
+      const baselineIndex = bundle.classes.indexOf("baseline");
+      return {
+        label: bundle.classes[best],
+        confidence: probs[best],
+        stressProbability: stressIndex >= 0 ? probs[stressIndex] : NaN,
+        baselineProbability: baselineIndex >= 0 ? probs[baselineIndex] : NaN,
+      };
     }
 
     function calculateHrv() {
@@ -737,20 +858,46 @@
         state.currentHrBpm = NaN;
         state.sdnnMs = NaN;
         state.rmssdMs = NaN;
+        state.pnn50Pct = NaN;
+        state.lfHfRatio = NaN;
+        state.predictedState = "";
+        state.stressProbability = NaN;
+        state.baselineProbability = NaN;
         return;
       }
 
       const mean = rr.reduce((a, b) => a + b, 0) / rr.length;
       const variance = rr.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (rr.length - 1);
       let diffSq = 0;
+      let over50 = 0;
       for (let i = 1; i < rr.length; i++) {
         const d = rr[i] - rr[i - 1];
         diffSq += d * d;
+        if (Math.abs(d) > 50) over50 += 1;
       }
 
       state.currentHrBpm = 60000 / mean;
       state.sdnnMs = Math.sqrt(Math.max(variance, 0));
       state.rmssdMs = Math.sqrt(diffSq / (rr.length - 1));
+      state.pnn50Pct = 100 * over50 / (rr.length - 1);
+      state.lfHfRatio = calculateLfHf(rr);
+
+      const prediction = predictStressState({
+        mean_hr: state.currentHrBpm,
+        sdnn: state.sdnnMs,
+        rmssd: state.rmssdMs,
+        pnn50: state.pnn50Pct,
+        lf_hf: state.lfHfRatio,
+      });
+      if (prediction) {
+        state.predictedState = prediction.label;
+        state.stressProbability = prediction.stressProbability;
+        state.baselineProbability = prediction.baselineProbability;
+      } else {
+        state.predictedState = "";
+        state.stressProbability = NaN;
+        state.baselineProbability = NaN;
+      }
     }
 
     function detectRPeak() {
@@ -813,6 +960,12 @@
       els.rrMetric.textContent = Number.isFinite(state.latestRrMs) ? `${Math.round(state.latestRrMs)} ms` : "-";
       els.sdnnMetric.textContent = Number.isFinite(state.sdnnMs) ? `${state.sdnnMs.toFixed(1)} ms` : "-";
       els.rmssdMetric.textContent = Number.isFinite(state.rmssdMs) ? `${state.rmssdMs.toFixed(1)} ms` : "-";
+      els.pnn50Metric.textContent = Number.isFinite(state.pnn50Pct) ? `${state.pnn50Pct.toFixed(1)}%` : "-";
+      els.lfHfMetric.textContent = Number.isFinite(state.lfHfRatio) ? state.lfHfRatio.toFixed(2) : "-";
+      els.stateMetric.textContent = state.predictedState || "-";
+      els.stressMetric.textContent = Number.isFinite(state.stressProbability)
+        ? `${Math.round(state.stressProbability * 100)}%`
+        : "-";
     }
 
     function parseAscii(view, source = "ble-ascii") {
@@ -1000,6 +1153,11 @@
       state.currentHrBpm = NaN;
       state.sdnnMs = NaN;
       state.rmssdMs = NaN;
+      state.pnn50Pct = NaN;
+      state.lfHfRatio = NaN;
+      state.predictedState = "";
+      state.stressProbability = NaN;
+      state.baselineProbability = NaN;
       resetFilters();
       updateMetrics(NaN, NaN);
       els.sampleMetric.textContent = "0";
@@ -1008,6 +1166,10 @@
       els.rrMetric.textContent = "-";
       els.sdnnMetric.textContent = "-";
       els.rmssdMetric.textContent = "-";
+      els.pnn50Metric.textContent = "-";
+      els.lfHfMetric.textContent = "-";
+      els.stateMetric.textContent = "-";
+      els.stressMetric.textContent = "-";
       updateRecordingUi();
       log("화면/버퍼 초기화");
     }
@@ -1054,6 +1216,11 @@
         "hr_bpm",
         "sdnn_ms",
         "rmssd_ms",
+        "pnn50_pct",
+        "lf_hf",
+        "predicted_state",
+        "prob_baseline",
+        "prob_stress",
       ].join(",");
       const firstT = rows[0]?.t ?? 0;
       const body = rows.map(r => {
@@ -1067,6 +1234,11 @@
           Number.isFinite(r.hrBpm) ? r.hrBpm.toFixed(2) : "",
           Number.isFinite(r.sdnnMs) ? r.sdnnMs.toFixed(2) : "",
           Number.isFinite(r.rmssdMs) ? r.rmssdMs.toFixed(2) : "",
+          Number.isFinite(r.pnn50Pct) ? r.pnn50Pct.toFixed(2) : "",
+          Number.isFinite(r.lfHfRatio) ? r.lfHfRatio.toFixed(3) : "",
+          r.predictedState || "",
+          Number.isFinite(r.baselineProbability) ? r.baselineProbability.toFixed(3) : "",
+          Number.isFinite(r.stressProbability) ? r.stressProbability.toFixed(3) : "",
         ].join(",");
       });
       return [header, ...body].join("\n");
