@@ -317,7 +317,7 @@
       <label for="payloadMode">Input payload</label>
       <select id="payloadMode">
         <option value="ascii">ASCII: adc 또는 t_ms,adc 한 줄</option>
-        <option value="u16le">Binary: uint16 little-endian 연속 샘플</option>
+        <option value="u16le" selected>Binary: uint16 little-endian 연속 샘플</option>
         <option value="i16le">Binary: int16 little-endian 연속 샘플</option>
         <option value="f32le">Binary: float32 little-endian 연속 샘플</option>
       </select>
@@ -325,7 +325,7 @@
       <div class="row">
         <div>
           <label for="sampleRate">샘플링 Hz</label>
-          <input id="sampleRate" type="number" value="500" min="50" step="1">
+          <input id="sampleRate" type="number" value="1000" min="50" step="1">
         </div>
         <div>
           <label for="windowSec">표시 구간 s</label>
@@ -397,7 +397,7 @@
       <h2>R peak / HRV</h2>
       <div class="check-row">
         <input id="rPeakOn" type="checkbox" checked>
-        <span>브라우저에서 R peak, RR, HRV 계산</span>
+        <span>보드 ML 구간에서 R peak 확정 후 RR/HRV 계산</span>
       </div>
       <div class="row">
         <div>
@@ -624,6 +624,9 @@
       predictedState: "",
       stressProbability: NaN,
       baselineProbability: NaN,
+      mlEventCount: 0,
+      mlBoardToGuiOffset: null,
+      latestMlProbability: NaN,
     };
 
     function numberOf(input, fallback) {
@@ -717,6 +720,7 @@
       for (const filter of state.filters) y = filter.next(y);
 
       const row = {
+        index: state.sampleIndex - 1,
         t,
         sample,
         inputV,
@@ -745,7 +749,8 @@
         updateRecordingUi();
       }
 
-      detectRPeak();
+      /* ML event가 없는 Serial/구형 펌웨어에서는 기존 검출기를 fallback으로 사용. */
+      if (state.mlEventCount === 0) detectRPeak();
       row.rrMs = state.latestRrMs;
       row.hrBpm = state.currentHrBpm;
       row.sdnnMs = state.sdnnMs;
@@ -942,6 +947,68 @@
       }
     }
 
+    function acceptRPeak(row, probability) {
+      if (!row || !els.rPeakOn.checked) return;
+      const peakT = row.t;
+      const refractorySec = Math.max(numberOf(els.refractoryMs, 300), 100) / 1000;
+      if (peakT - state.lastPeakT <= refractorySec) return;
+
+      const rrMs = Number.isFinite(state.lastPeakT) ? (peakT - state.lastPeakT) * 1000 : NaN;
+      const rrMinMs = Math.max(numberOf(els.rrMinMs, 300), 100);
+      const rrMaxMs = Math.max(numberOf(els.rrMaxMs, 2000), rrMinMs + 100);
+      if (Number.isFinite(rrMs) && rrMs >= rrMinMs && rrMs <= rrMaxMs) {
+        state.latestRrMs = rrMs;
+        state.rrIntervalsMs.push(rrMs);
+        const maxBeats = Math.max(Math.floor(numberOf(els.hrvBeats, 64)), 4);
+        if (state.rrIntervalsMs.length > maxBeats) state.rrIntervalsMs.shift();
+        calculateHrv();
+      }
+
+      row.rPeak = 1;
+      row.rrMs = state.latestRrMs;
+      row.hrBpm = state.currentHrBpm;
+      row.sdnnMs = state.sdnnMs;
+      row.rmssdMs = state.rmssdMs;
+      state.lastPeakT = peakT;
+      state.lastPeaks.push(peakT);
+      state.lastPeaks = state.lastPeaks.filter(v => peakT - v <= 12);
+      state.latestMlProbability = probability;
+    }
+
+    function parseEdgeImpulseEvent(view) {
+      if (view.byteLength !== 20 || view.getUint8(0) !== 0x45 ||
+          view.getUint8(1) !== 0x49 || view.getUint8(2) !== 0x52 ||
+          view.getUint8(3) !== 0x50) return false;
+
+      const detected = view.getUint8(5) !== 0;
+      const probability = view.getUint16(6, true) / 1000;
+      const boardStart = view.getUint32(8, true);
+      const boardEnd = view.getUint32(12, true);
+      const boardSentAt = view.getUint32(16, true);
+      state.mlEventCount += 1;
+
+      if (state.mlBoardToGuiOffset === null && state.samples.length) {
+        state.mlBoardToGuiOffset = state.samples[state.samples.length - 1].index - boardSentAt;
+        log(`보드 ML 동기화: sample offset ${state.mlBoardToGuiOffset}`);
+      }
+      if (!detected || state.mlBoardToGuiOffset === null) return true;
+
+      const localStart = boardStart + state.mlBoardToGuiOffset;
+      const localEnd = boardEnd + state.mlBoardToGuiOffset;
+      const candidates = state.samples.filter(row => row.index >= localStart && row.index <= localEnd);
+      if (!candidates.length) {
+        log(`ML R-peak 구간 데이터 없음: ${boardStart}-${boardEnd}`);
+        return true;
+      }
+
+      /* 현재 AFE의 양의 R파 기준. 구간 내 필터 신호 최댓값을 정확한 R 위치로 확정한다. */
+      let peak = candidates[0];
+      for (const row of candidates) if (row.filteredV > peak.filteredV) peak = row;
+      acceptRPeak(peak, probability);
+      log(`ML R-peak: ${(probability * 100).toFixed(1)}%, sample ${boardStart}-${boardEnd}`);
+      return true;
+    }
+
     function updateMetrics(inputV, filteredV) {
       els.latestRaw.textContent = fmt(inputV, "V");
       els.latestFiltered.textContent = fmt(filteredV, "V");
@@ -999,6 +1066,7 @@
 
     function onNotify(event) {
       const view = event.target.value;
+      if (parseEdgeImpulseEvent(view)) return;
       if (els.payloadMode.value === "ascii") parseAscii(view);
       else parseBinary(view);
     }
@@ -1158,6 +1226,9 @@
       state.predictedState = "";
       state.stressProbability = NaN;
       state.baselineProbability = NaN;
+      state.mlEventCount = 0;
+      state.mlBoardToGuiOffset = null;
+      state.latestMlProbability = NaN;
       resetFilters();
       updateMetrics(NaN, NaN);
       els.sampleMetric.textContent = "0";
